@@ -62,9 +62,11 @@ df = (spark.read
       .option("escape", "\"")
       .csv("data/lightcast_job_postings.csv")
       .limit(5000))
+
+df.createOrReplaceTempView("job_postings")
 # Show Schema and Sample Data
 #df.printSchema()  
-#df.show(5)
+df.show(5)
 ```
 
 
@@ -161,7 +163,59 @@ print("Data cleaning complete. Rows retained:", len(pdf))
 
 
 
+
+
+
+# Set up plotly template
 ```{python}
+#| eval: false
+#| echo: false
+import plotly.graph_objects as go
+import plotly.io as pio
+
+pio.templates["nike"] = go.layout.Template(
+    # LAYOUT
+    layout = {
+        # Fonts
+        # Note - 'family' must be a single string, NOT a list or dict!
+        'title': {
+            'font': {'family': 'HelveticaNeue-CondensedBold, Helvetica, Sans-serif',
+                     'size': 30,
+                     'color': '#13007c'} # 333
+        },
+        'font': {'family': 'Helvetica Neue, Helvetica, Sans-serif',
+                 'size': 16,
+                 'color': '#3b3b3b'}, # 333
+
+        # Colorways ec7424
+        'colorway': ['#fffb00', '#e010fc'], # CC0000, a4adab
+        # Keep adding others as needed below
+        'hovermode': 'x unified'
+    },
+    # DATA
+    data = {
+        # Each graph object must be in a tuple or list for each trace
+        'bar': [go.Bar(
+            texttemplate = '%{value:$.2s}',
+            textposition = 'outside',
+            textfont = {'family': 'Helvetica Neue, Helvetica, Sans-serif',
+                        'size': 20,
+                        'color': '#ff6874'} # FFFFFF
+        )]
+    }
+)
+```
+
+
+
+
+
+
+
+
+```{python}
+#| eval: false
+#| echo: false
 #your code for first query
 import pandas as pd
 import polars as pl
@@ -277,16 +331,181 @@ fig.write_image("output/Q1.svg", width=850, height=500, scale=1)
 - **Explanation:** Write two sentences about what the graph reveals.
 
 ```{python}
-#| eval: true
-#| echo: true
+#| eval: false
+#| echo: false
 #| fig-align: center
 pdf = df.select("NAICS2_NAME", "SALARY").toPandas()
 fig = px.box(pdf, x="NAICS2_NAME", y="SALARY", title="Salary Distribution by Industry",
              color_discrete_sequence=["#EF553B"])
-fig.update_layout(font_family="Arial", title_font_size=16,
-                height=900,
-                width=1100)
-# rotate x-axis label for readability
-fig.update_xaxes(tickangle=45, tickfont=dict(size=12))
+                 # add nike template
+fig.update_layout(template="nike")
+
+fig.update_xaxes(tickangle=45)
 fig.show()
+```
+
+
+# Salary Analysis by ONET Occupation Type (Bubble Chart)
+- Analyze how salaries differ across ONET occupation types.
+- **Aggregate Data**
+  - Compute *median salary* for each occupation in the **ONET taxonomy**.
+- **Visualize results**
+  - Create a **bubble chart** where:
+    - **X-axis** = `ONET_NAME`
+    - **Y-axis** = `Median Salary`
+    - **Size** = Number of job postings
+  - Apply custom colors and font styles.
+- **Explanation:** Write two sentences about what the graph reveals.
+
+```{python}
+#| eval: false
+#| echo: false
+pdf = df.select("ONET_NAME", "SALARY", "ID").toPandas()
+
+df_onet = pdf.groupby(["ONET_NAME"]).agg({"SALARY": "median", "ID": "count"}).reset_index()
+fig = px.scatter(
+    df_onet,
+    x="ONET_NAME",
+    y="SALARY",
+    size="ID",
+    title="Salary Analysis by ONET Occupation",
+    color="ONET_NAME"
+)
+fig.update_layout(font_family="Arial", title_font_size=16)
+fig.show()
+```
+
+
+
+# Salary by Education Level
+- Create two groups:
+  - **Bachelor’s or lower** (Bachelor's, GED, Associate, No Education Listed)
+  - **Master’s or PhD** (Master's degree, Ph.D. or professional degree)
+- Plot scatter plots for each group using `MAX_YEARS_EXPERIENCE` (with jitter), `Average_Salary`, `LOT_V6_SPECIALIZED_OCCUPATION_NAME`.
+- Then, plot histograms overlaid with KDE curves for each group.
+  - This would generate two scatter plots and two histograms.
+- **After each graph, add a short explanation** of key insights.
+
+# Salary by Remote Work Type
+- Split into three groups based on `REMOTE_TYPE_NAME`:
+  - Remote
+  - Hybrid
+  - Onsite (includes `[None]` and blank)
+- Plot scatter plots for each group using `MAX_YEARS_EXPERIENCE` (with jitter), `Average_Salary`, `LOT_V6_SPECIALIZED_OCCUPATION_NAME`.
+- Also, create salary histograms for all three groups.
+- **After each graph, briefly describe any patterns or comparisons.**
+
+# Submission Instructions {.unnumbered}
+- Submit the Word Document (part of git repo) containing:
+  - The **HTTPS URL** of your GitHub repository.
+  - Answer to the questions.
+  - **Visualizations** created using matplotlib, Seaborn or plotly (preferred).
+  - Answers to the questions below.
+
+```{python}
+#| eval: true
+#| echo: true
+
+# Step 1: Spark SQL - Median salary and job count per TITLE_NAME
+salary_analysis = spark.sql("""
+    SELECT
+        LOT_OCCUPATION_NAME AS Occupation_name,
+        PERCENTILE(SALARY, 0.5) AS Median_Salary,
+        COUNT(*) AS Job_Postings
+    FROM job_postings
+    GROUP BY LOT_OCCUPATION_NAME
+    ORDER BY Job_Postings DESC
+    LIMIT 10
+""")
+
+# Step 2: Convert to Pandas DataFrame
+salary_pd = salary_analysis.toPandas()
+salary_pd.head()
+
+
+
+# Step 3: Bubble chart using Plotly
+
+import plotly.express as px
+
+fig = px.scatter(
+    salary_pd,
+    x="Occupation_name",
+    y="Median_Salary",
+    size="Job_Postings",
+    title="Salary Analysis by LOT Occupation Type (Bubble Chart)",
+    labels={
+        "Occupation_name": "LOT Occupation",
+        "Median_Salary": "Median Salary",
+        "Job_Postings": "Number of Job Postings"
+    },
+    hover_name="Occupation_name",
+    size_max=60,
+    width=1000,
+    height=600,
+    color="Job_Postings",
+    color_continuous_scale="Plasma"
+)
+
+
+
+# Step 4: Layout customization
+fig.update_layout(
+    font_family="Arial",
+    font_size=14,
+    title_font_size=25,
+    xaxis_title="LOT Occupation",
+    yaxis_title="Median Salary",
+    plot_bgcolor="white",
+    xaxis=dict(
+        tickangle=-45,
+        showline=True,
+        linecolor="black"
+    ),
+    yaxis=dict(
+        showline=True,
+        linecolor="black"
+    )
+)
+
+# Step 5: Show and export
+fig.show()
+fig.write_image("output/Q7.svg", width=1000, height=600, scale=1)
+
+
+```
+
+
+
+```{python}
+# Defining education level groupings
+lower_deg = ["Bachelor's", "Associate", "GED", "No Education Listed", "High school"]
+higher_deg = ["Master's degree", "PhD or professional degree"]
+
+# Adding EDU_GROUP column
+df = df.withColumn(
+    "EDU_GROUP",
+    when(col("EDUCATION_LEVELS_NAME").rlike("|".join([f"(?i){deg}" for deg in lower_deg])), "Bachelor's or lower")
+    .when(col("EDUCATION_LEVELS_NAME").rlike("|".join([f"(?i){deg}" for deg in higher_deg])), "Master's or PhD")
+    .otherwise("Other")
+)
+
+# Casting necessary columns to float
+df = df.withColumn("MAX_YEARS_EXPERIENCE", col("MAX_YEARS_EXPERIENCE").cast("float"))
+df = df.withColumn("Average_Salary", col("Average_Salary").cast("float"))
+
+# Filtering for non-null and positive values
+df = df.filter(
+    col("MAX_YEARS_EXPERIENCE").isNotNull() &
+    col("Average_Salary").isNotNull() &
+    (col("MAX_YEARS_EXPERIENCE") > 0) &
+    (col("Average_Salary") > 0)
+)
+
+# Filtering for just the two education groups
+df_filtered = df.filter(col("EDU_GROUP").isin("Bachelor's or lower", "Master's or PhD"))
+
+# Converting to Pandas for plotting
+df_pd = df_filtered.toPandas()
+df_pd.head()
 ```
