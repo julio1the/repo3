@@ -187,3 +187,4 @@ output/
 .vscode-server/
 spark-*.tgz
 spark-*/
+*.deb
