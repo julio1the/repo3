@@ -6,7 +6,7 @@ website:
   title: "Sitio Julio Vargas"
   navbar:
     left:
-      - href: juliovargas.qmd
+      - href: assignment03-juliovargas.qmd
         text: Inicio
 
 format:
